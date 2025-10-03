@@ -73,7 +73,7 @@ int main()
 			break;
 		case 2:
 			printf("The resulting level-order traversal of the binary search tree is: ");
-			levelOrderTraversal(root); // You need to code this function
+			levelOrderTraversal(&root); // You need to code this function
 			printf("\n");
 			break;
 		case 0:
@@ -93,8 +93,11 @@ int main()
 
 void levelOrderTraversal(BSTNode* root)
 {
-
-    /* add your code here */
+	if (root == NULL)
+		return;
+	printf("%d, ", root->item);
+	levelOrderTraversal(root->left);
+	levelOrderTraversal(root->right);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
