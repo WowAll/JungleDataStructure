@@ -84,9 +84,58 @@ int main()
 
 //////////////////////////////////////////////////////////////////////////////////
 
-void moveEvenItemsToBack(LinkedList *ll)
-{
-	/* add your code here */
+int moveNode(LinkedList *list, ListNode *lastEven, ListNode *previous) {
+    // 기본적인 유효성 검사
+    if (list == NULL || list->head == NULL || previous == NULL || previous->next == NULL)
+        return -1;
+
+    ListNode *target = previous->next; // 옮길 노드
+
+    if (!lastEven) {
+        // 아직 짝수 블록이 없는 경우: target을 리스트 맨 앞으로 이동
+        previous->next = target->next;
+        target->next = list->head;
+        list->head = target;
+    } else {
+        // 짝수 블록이 이미 있는 경우: target을 lastEven 뒤에 삽입
+        previous->next = target->next;
+        target->next = lastEven->next;
+        lastEven->next = target;
+    }
+
+    return 0;
+}
+
+void moveEvenItemsToBack(LinkedList *list) {
+    ListNode *current = list->head;   // 현재 탐색 중인 노드
+    ListNode *previous = NULL;        // current의 직전 노드
+    ListNode *lastOdd = NULL;         // 마지막으로 본 홀수 노드
+
+    while (current) {
+        ListNode *nextNode = current->next; // 다음 탐색할 노드 미리 저장
+
+        if (current->item % 2 == 1) { // 홀수 노드인 경우
+            if (lastOdd == previous) {
+                // 아직 짝수를 만나지 않았거나, 홀수가 연속되는 경우
+                lastOdd = current;
+                previous = current;
+                current = nextNode;
+            } else {
+                // 짝수 뒤에 있는 홀수를 lastOdd 뒤로 이동
+                moveNode(list, lastOdd, previous);
+
+                // current는 홀수이므로 lastOdd 갱신
+                lastOdd = current;
+
+                // 다음 탐색 노드로 이동
+                current = nextNode;
+            }
+        } else {
+            // 짝수 노드인 경우: 단순히 previous 갱신
+            previous = current;
+            current = nextNode;
+        }
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////

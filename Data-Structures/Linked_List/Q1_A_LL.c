@@ -97,7 +97,14 @@ int insertSortedLL(LinkedList *ll, int item)
 		cursor = cursor->next;
 		idx++;
 	}
-	insertNode(ll, idx, item);
+
+	if (cursor && cursor->item == item)
+		return -1;
+
+	if (insertNode(ll, idx, item) == -1)
+		return -1;
+	
+	return idx;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
