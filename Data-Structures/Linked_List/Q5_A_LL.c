@@ -100,34 +100,45 @@ int main()
 
 //////////////////////////////////////////////////////////////////////////////////
 
+// 단일 연결리스트 ll을 앞/뒤 두 개의 리스트로 분리하는 함수
+// - 홀수 개일 경우 앞 리스트가 하나 더 많음
+// - 결과는 resultFrontList, resultBackList에 저장
+// - 원본 ll은 비워짐
 void frontBackSplitLinkedList(LinkedList *ll, LinkedList *resultFrontList, LinkedList *resultBackList)
 {
-	if (!ll || !ll->head) {
-		resultFrontList->head = NULL;
-		resultFrontList->size = 0;
-		resultBackList->head = NULL;
-		resultBackList->size = 0;
-		return;
-	}
+    // 예외 처리: 빈 리스트이거나 NULL 포인터일 경우
+    if (!ll || !ll->head) {
+        resultFrontList->head = NULL;
+        resultFrontList->size = 0;
+        resultBackList->head = NULL;
+        resultBackList->size = 0;
+        return;
+    }
 
-	int frontsize = (ll->size + 1) / 2;
-	int backsize = ll->size / 2;
+    // 앞/뒤 리스트의 크기 계산
+    // 홀수일 경우 앞쪽이 하나 더 많음
+    int frontsize = (ll->size + 1) / 2;
+    int backsize  = ll->size / 2;
 
-	resultFrontList->head = ll->head;
-	resultFrontList->size = frontsize;
-	
-	ListNode *cursor = ll->head;
+    // 앞 리스트의 head와 size 설정
+    resultFrontList->head = ll->head;
+    resultFrontList->size = frontsize;
+    
+    // cursor를 앞 리스트의 마지막 노드까지 이동
+    ListNode *cursor = ll->head;
+    for (int i = 0; i < frontsize - 1; i++)
+        cursor = cursor->next;
 
-	for (int i = 0; i < frontsize - 1; i++)
-		cursor = cursor->next;
+    // 뒷 리스트 head 연결 및 size 설정
+    resultBackList->head = cursor->next;
+    cursor->next = NULL;              // 앞/뒤 리스트 분리
+    resultBackList->size = backsize;
 
-	resultBackList->head = cursor->next;
-	cursor->next = NULL;
-	resultBackList->size = backsize;
-
-	ll->head = NULL;
-	ll->size = 0;
+    // 원본 리스트는 비워줌
+    ll->head = NULL;
+    ll->size = 0;
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////////
 

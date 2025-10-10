@@ -101,22 +101,45 @@ int main()
 
 //////////////////////////////////////////////////////////////////////////////////
 
+// 두 개의 단일 연결리스트 ll1, ll2를 번갈아가며 병합하는 함수
+// ll1의 노드 뒤에 ll2의 노드를 하나씩 끼워 넣는 방식
 void alternateMergeLinkedList(LinkedList *ll1, LinkedList *ll2)
 {
-	ListNode* cursor = ll1->head;
+    // ll1을 순회할 커서
+    ListNode* cursor = ll1->head;
+
+    // ll1의 각 노드를 따라가며 ll2의 노드를 하나씩 삽입
     while (cursor)
-	{
-		if (!ll2->head) break;
-		ListNode* temp = ll2->head;
-		ListNode* next = cursor->next;
-		if (ll2->size == 1) ll2->head = NULL;
-		else ll2->head = ll2->head->next;
-		temp->next = cursor->next;
-		cursor->next = temp;
-		ll1->size++; ll2->size--;
-		cursor = next;
-	}
+    {
+        // ll2가 더 이상 비어 있으면 종료
+        if (!ll2->head) break;
+
+        // ll2에서 꺼낼 노드
+        ListNode* temp = ll2->head;
+
+        // ll1에서 현재 cursor 다음 노드를 미리 저장
+        ListNode* next = cursor->next;
+
+        // ll2의 head를 다음 노드로 갱신
+        if (ll2->size == 1)
+            ll2->head = NULL;          // 마지막 노드를 꺼낸 경우
+        else
+            ll2->head = ll2->head->next;
+
+        // 꺼낸 노드를 ll1의 cursor 뒤에 삽입
+        temp->next = cursor->next;
+        cursor->next = temp;
+
+        // 리스트 크기 갱신
+        ll1->size++;
+        ll2->size--;
+
+        // cursor를 원래 ll1의 다음 노드로 이동
+        cursor = next;
+    }
 }
+
+
 
 ///////////////////////////////////////////////////////////////////////////////////
 

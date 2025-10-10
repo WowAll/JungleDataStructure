@@ -85,10 +85,31 @@ int main()
 
 ////////////////////////////////////////////////////////////////////////
 
+// 단일 연결리스트를 재귀적으로 뒤집는 함수
+// - ptrHead는 리스트의 head 포인터에 대한 포인터
+// - 재귀적으로 끝까지 내려간 뒤, 돌아오면서 포인터를 뒤집음
 void RecursiveReverse(ListNode **ptrHead)
 {
-	/* add your code here */
+    // 예외 처리: 빈 리스트이거나 노드가 하나뿐이면 그대로 반환
+    if (!ptrHead || !*ptrHead || (*ptrHead)->next == NULL)
+        return;
+
+    // 현재 노드(first)와 나머지 리스트(rest)를 분리
+    ListNode *first = *ptrHead;
+    ListNode *rest = first->next;
+
+    // 나머지 리스트를 재귀적으로 뒤집음
+    RecursiveReverse(&rest);
+
+    // rest는 이제 뒤집힌 리스트의 head
+    // 현재 노드를 뒤집힌 리스트의 끝에 연결
+    first->next->next = first;
+    first->next = NULL;
+
+    // head를 새 head(rest)로 갱신
+    *ptrHead = rest;
 }
+
 
 //////////////////////////////////////////////////////////////////////////////////
 

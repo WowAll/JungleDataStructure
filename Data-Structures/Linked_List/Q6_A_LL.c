@@ -86,10 +86,52 @@ int main()
 
 ////////////////////////////////////////////////////////////////////////
 
+// 주어진 previous 뒤의 노드를 잘라내어 리스트 맨 앞으로 이동시키는 함수
+int moveHead(ListNode **head, ListNode *previous) {
+    // 기본적인 유효성 검사
+    if (!head || !*head || previous == NULL || previous->next == NULL)
+        return -1;
+
+    // 옮길 대상 노드 = previous 다음 노드
+    ListNode *target = previous->next;
+
+    // previous와 target을 분리
+    previous->next = target->next;
+
+    // target을 리스트 맨 앞에 붙임
+    target->next = *head;
+    *head = target;
+
+    return 0;
+}
+
+// 리스트에서 최댓값 노드를 찾아 맨 앞으로 이동시키는 함수
 int moveMaxToFront(ListNode **ptrHead)
 {
-    /* add your code here */
+    // 기본적인 유효성 검사
+    if (!ptrHead || !*ptrHead)
+        return -1;
+
+    ListNode *cursor = *ptrHead;
+    int temp = cursor->item;     // 현재까지의 최댓값
+    ListNode *maxPrev = NULL;    // 최댓값 노드의 이전 노드
+
+    // 리스트 순회하면서 최댓값 노드의 이전 노드를 찾음
+    while (cursor->next) {
+        if (cursor->next->item > temp) {
+            temp = cursor->next->item;
+            maxPrev = cursor;    // 최댓값 노드의 이전 노드 저장
+        }
+        cursor = cursor->next;
+    }
+
+    // head 자체가 최댓값이면 maxPrev는 NULL → 이동 불필요
+    if (maxPrev)
+        moveHead(ptrHead, maxPrev);
+
+    return 0;
 }
+
 
 //////////////////////////////////////////////////////////////////////////////////
 

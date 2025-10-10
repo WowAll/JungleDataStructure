@@ -87,25 +87,37 @@ int main()
 
 //////////////////////////////////////////////////////////////////////////////////
 
+// 정렬된 단일 연결리스트에 새로운 원소를 삽입하는 함수
+// - 이미 존재하는 값이면 삽입하지 않고 -1 반환
+// - 정상적으로 삽입되면 삽입된 위치의 인덱스를 반환
 int insertSortedLL(LinkedList *ll, int item)
 {
-	ListNode* cursor = ll->head;
+    // 리스트 순회용 포인터
+    ListNode* cursor = ll->head;
 
-	int idx = 0;
+    // 삽입할 위치를 기록할 인덱스
+    int idx = 0;
 
-	while (cursor && cursor->item < item) {
-		cursor = cursor->next;
-		idx++;
-	}
+    // 현재 노드 값이 삽입할 값보다 작을 동안 앞으로 이동
+    // → 삽입할 위치를 찾는 과정
+    while (cursor && cursor->item < item) {
+        cursor = cursor->next;
+        idx++;
+    }
 
-	if (cursor && cursor->item == item)
-		return -1;
+    // 동일한 값이 이미 존재하면 삽입하지 않고 -1 반환
+    if (cursor && cursor->item == item)
+        return -1;
 
-	if (insertNode(ll, idx, item) == -1)
-		return -1;
-	
-	return idx;
+    // 찾은 위치 idx에 새 노드를 삽입
+    // insertNode는 (리스트, 인덱스, 값)을 받아 해당 위치에 노드를 삽입하는 함수라고 가정
+    if (insertNode(ll, idx, item) == -1)
+        return -1;
+
+    // 삽입된 위치 반환
+    return idx;
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////////
 
