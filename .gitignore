@@ -1,0 +1,18 @@
+
+# 빌드 산출물 무시
+*.o
+*.out
+*.exe
+
+# 로그 파일 무시
+*.log
+
+# 특정 폴더 무시
+/build/
+/node_modules/
+/Test/
+
+# OS/에디터 자동 생성 파일 무시
+.DS_Store
+Thumbs.db
+.vscode/
