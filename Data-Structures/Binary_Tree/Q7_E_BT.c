@@ -100,11 +100,18 @@ int main()
 
 //////////////////////////////////////////////////////////////////////////////////
 
-int smallestValue(BTNode *node)
-{
-	/* add your code here */
+int smallestValue(BTNode *node) {
+    if (node == NULL)
+        return INT_MAX;
+    int ret = node->item;
+    int leftRet = smallestValue(node->left);
+    int rightRet = smallestValue(node->right);
+    if (leftRet < ret)
+        ret = leftRet;
+    if (rightRet < ret)
+        ret = rightRet;
+    return ret;
 }
-
 //////////////////////////////////////////////////////////////////////////////////
 
 BTNode *createBTNode(int item)

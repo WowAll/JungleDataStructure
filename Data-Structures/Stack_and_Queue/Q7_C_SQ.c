@@ -102,9 +102,27 @@ int main()
 }
 
 ////////////////////////////////////////////////////////////
+
 int balanced(char *expression)
 {
-/* add your code here */
+	Stack s;
+	s.ll.head = NULL;
+	s.ll.size = 0;
+	while (*expression) {
+		if (*expression == '(' || *expression == '[' || *expression == '{')
+			push(&s, *expression);
+		else {
+			if (isEmptyStack(&s))
+				return 1;
+			char opening = pop(&s);
+			if (abs(opening - *expression) > 2)
+				return 1;
+		}
+		expression++;
+	}
+	if (!isEmptyStack(&s))
+		return 1;
+	return 0;
 }
 
 ////////////////////////////////////////////////////////////

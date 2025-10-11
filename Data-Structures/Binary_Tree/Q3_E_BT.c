@@ -98,10 +98,15 @@ int main()
 
 //////////////////////////////////////////////////////////////////////////////////
 
-int countOneChildNodes(BTNode *node)
-
+int maxHeight(BTNode *node)
 {
-    /* add your code here */
+    if (node == NULL)
+        return -1;
+    int leftRet = maxHeight(node->left);
+    int rightRet = maxHeight(node->right);
+    if (leftRet > rightRet)
+        return leftRet + 1;
+    return rightRet + 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
