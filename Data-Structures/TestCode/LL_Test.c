@@ -1,9 +1,78 @@
 //////////////////////////////////////////////////////////////////////////////////
-/* Enhanced Linked List Test Suite with Detailed Error Reporting */
+/* Enhanced Linked List Test Suite with Crash & Error Detection */
 //////////////////////////////////////////////////////////////////////////////////
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
+#include <setjmp.h>
+#include <unistd.h>
+#include <sys/time.h>
+
+//////////////////////////////////////////////////////////////////////////////////
+// Error Detection System
+//////////////////////////////////////////////////////////////////////////////////
+
+static jmp_buf test_env;
+static volatile sig_atomic_t timeout_occurred = 0;
+static const char* current_test_name = NULL;
+
+#define TEST_TIMEOUT_SECONDS 3
+
+// Signal handler for crashes
+void crash_handler(int sig) {
+    const char* error_type = "UNKNOWN";
+    
+    switch(sig) {
+        case SIGSEGV:
+            error_type = "SEGMENTATION FAULT (accessing invalid memory)";
+            break;
+        case SIGFPE:
+            error_type = "FLOATING POINT EXCEPTION (division by zero)";
+            break;
+        case SIGABRT:
+            error_type = "ABORT (program terminated abnormally)";
+            break;
+        case SIGILL:
+            error_type = "ILLEGAL INSTRUCTION";
+            break;
+    }
+    
+    printf("\n🔴 CRASH DETECTED: %s\n", error_type);
+    printf("   In test: %s\n", current_test_name ? current_test_name : "Unknown");
+    printf("   Signal: %d\n", sig);
+    
+    // Jump back to safe point
+    longjmp(test_env, sig);
+}
+
+// Alarm handler for timeout
+void timeout_handler(int sig) {
+    timeout_occurred = 1;
+    printf("\n⏱️  TIMEOUT: Test exceeded %d seconds (possible infinite loop)\n", TEST_TIMEOUT_SECONDS);
+    printf("   In test: %s\n", current_test_name ? current_test_name : "Unknown");
+    longjmp(test_env, SIGALRM);
+}
+
+// Setup signal handlers
+void setup_error_detection() {
+    signal(SIGSEGV, crash_handler);
+    signal(SIGFPE, crash_handler);
+    signal(SIGABRT, crash_handler);
+    signal(SIGILL, crash_handler);
+    signal(SIGALRM, timeout_handler);
+}
+
+// Start timeout timer
+void start_timeout() {
+    timeout_occurred = 0;
+    alarm(TEST_TIMEOUT_SECONDS);
+}
+
+// Stop timeout timer
+void stop_timeout() {
+    alarm(0);
+}
 
 //////////////////////////////////////////////////////////////////////////////////
 // Test Statistics
@@ -13,9 +82,11 @@ typedef struct {
     int total_tests;
     int passed_tests;
     int failed_tests;
+    int crashed_tests;
+    int timeout_tests;
 } TestStats;
 
-TestStats global_stats = {0, 0, 0};
+TestStats global_stats = {0, 0, 0, 0, 0};
 
 //////////////////////////////////////////////////////////////////////////////////
 // Enhanced Assertion Macros
@@ -29,6 +100,109 @@ TestStats global_stats = {0, 0, 0};
         printf("   Expected: %d\n", (expected)); \
         printf("   Actual:   %d\n", (actual)); \
         printf("   Location: Line %d\n", __LINE__); \
+        return; \
+    } else { \
+        global_stats.passed_tests++; \
+        printf("✓ %s\n", test_name); \
+    } \
+} while(0)
+
+#define TEST_ASSERT_ARRAY_EQ(actual_array, expected_array, count, test_name) do { \
+    global_stats.total_tests++; \
+    int match = 1; \
+    for (int i = 0; i < (count); i++) { \
+        if ((actual_array)[i].item != (expected_array)[i]) { \
+            match = 0; \
+            break; \
+        } \
+    } \
+    if (!match) { \
+        global_stats.failed_tests++; \
+        printf("❌ FAILED: %s\n", test_name); \
+        printf("   Expected: "); \
+        for (int i = 0; i < (count); i++) { \
+            printf("%d ", (expected_array)[i]); \
+        } \
+        printf("\n   Actual:   "); \
+        for (int i = 0; i < (count); i++) { \
+            printf("%d ", (actual_array)[i].item); \
+        } \
+        printf("\n   Location: Line %d\n", __LINE__); \
+        return; \
+    } else { \
+        global_stats.passed_tests++; \
+        printf("✓ %s\n", test_name); \
+    } \
+} while(0)
+
+#define TEST_ASSERT_LL_EQ(actual_ll, expected_array, expected_count, test_name) do { \
+    global_stats.total_tests++; \
+    int match = 1; \
+    \
+    /* Check if actual_ll is NULL */ \
+    if (actual_ll == NULL) { \
+        if ((expected_count) == 0) { \
+            match = 1; \
+        } else { \
+            match = 0; \
+        } \
+    } else { \
+        /* Check size first */ \
+        if ((actual_ll)->size != (expected_count)) { \
+            match = 0; \
+        } else { \
+            /* Check if head is NULL when expected count is 0 */ \
+            if ((expected_count) == 0) { \
+                if ((actual_ll)->head != NULL) { \
+                    match = 0; \
+                } \
+            } else { \
+                /* Check if head is NULL when expected count > 0 */ \
+                if ((actual_ll)->head == NULL) { \
+                    match = 0; \
+                } else { \
+                    /* Compare each element */ \
+                    ListNode *current = (actual_ll)->head; \
+                    for (int i = 0; i < (expected_count); i++) { \
+                        if (current == NULL || current->item != (expected_array)[i]) { \
+                            match = 0; \
+                            break; \
+                        } \
+                        current = current->next; \
+                    } \
+                    /* Check if there are extra elements */ \
+                    if (current != NULL) { \
+                        match = 0; \
+                    } \
+                } \
+            } \
+        } \
+    } \
+    \
+    if (!match) { \
+        global_stats.failed_tests++; \
+        printf("❌ FAILED: %s\n", test_name); \
+        printf("   Expected: "); \
+        for (int i = 0; i < (expected_count); i++) { \
+            printf("%d ", (expected_array)[i]); \
+        } \
+        printf("(size: %d)\n", (expected_count)); \
+        printf("   Actual:   "); \
+        if ((actual_ll) == NULL) { \
+            printf("NULL"); \
+        } else if ((actual_ll)->head == NULL) { \
+            printf("NULL"); \
+        } else { \
+            ListNode *current = (actual_ll)->head; \
+            while (current != NULL) { \
+                printf("%d ", current->item); \
+                current = current->next; \
+            } \
+        } \
+        if ((actual_ll) != NULL) { \
+            printf("(size: %d)", (actual_ll)->size); \
+        } \
+        printf("\n   Location: Line %d\n", __LINE__); \
         return; \
     } else { \
         global_stats.passed_tests++; \
@@ -123,70 +297,6 @@ int insertNode(LinkedList *ll, int index, int value) {
     return -1;
 }
 
-int compareListWithDetails(LinkedList *ll, int *expected, int expectedSize, const char *test_name) {
-    global_stats.total_tests++;
-    
-    if (ll->size != expectedSize) {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: %s\n", test_name);
-        printf("   Size mismatch!\n");
-        printf("   Expected size: %d\n", expectedSize);
-        printf("   Actual size:   %d\n", ll->size);
-        printf("   Expected: ");
-        for (int i = 0; i < expectedSize; i++) {
-            if (i == 0) printf("[");
-            printf("%d", expected[i]);
-            if (i < expectedSize - 1) printf(", ");
-            else printf("]\n");
-        }
-        printf("   Actual:   ");
-        printListArray(ll);
-        printf("\n");
-        return 0;
-    }
-    
-    ListNode *cur = ll->head;
-    for (int i = 0; i < expectedSize; i++) {
-        if (cur == NULL) {
-            global_stats.failed_tests++;
-            printf("❌ FAILED: %s\n", test_name);
-            printf("   List ended prematurely at index %d\n", i);
-            return 0;
-        }
-        
-        if (cur->item != expected[i]) {
-            global_stats.failed_tests++;
-            printf("❌ FAILED: %s\n", test_name);
-            printf("   Mismatch at index %d\n", i);
-            printf("   Expected value: %d\n", expected[i]);
-            printf("   Actual value:   %d\n", cur->item);
-            printf("   Expected: ");
-            for (int j = 0; j < expectedSize; j++) {
-                if (j == 0) printf("[");
-                printf("%d", expected[j]);
-                if (j < expectedSize - 1) printf(", ");
-                else printf("]\n");
-            }
-            printf("   Actual:   ");
-            printListArray(ll);
-            printf("\n");
-            return 0;
-        }
-        cur = cur->next;
-    }
-    
-    if (cur != NULL) {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: %s\n", test_name);
-        printf("   List has extra elements beyond expected size\n");
-        return 0;
-    }
-    
-    global_stats.passed_tests++;
-    printf("✓ %s\n", test_name);
-    return 1;
-}
-
 //////////////////////////////////////////////////////////////////////////////////
 // Function Prototypes
 //////////////////////////////////////////////////////////////////////////////////
@@ -198,6 +308,27 @@ void moveEvenItemsToBack(LinkedList *list);
 void frontBackSplitLinkedList(LinkedList *ll, LinkedList *resultFrontList, LinkedList *resultBackList);
 int moveMaxToFront(ListNode **ptrHead);
 void RecursiveReverse(ListNode **ptrHead);
+
+//////////////////////////////////////////////////////////////////////////////////
+// SAFE TEST WRAPPER
+//////////////////////////////////////////////////////////////////////////////////
+
+#define RUN_SAFE_TEST(test_func) do { \
+    int sig; \
+    current_test_name = #test_func; \
+    start_timeout(); \
+    if ((sig = setjmp(test_env)) == 0) { \
+        test_func(); \
+    } else { \
+        if (sig == SIGALRM) { \
+            global_stats.timeout_tests++; \
+        } else { \
+            global_stats.crashed_tests++; \
+        } \
+    } \
+    stop_timeout(); \
+    current_test_name = NULL; \
+} while(0)
 
 //////////////////////////////////////////////////////////////////////////////////
 // TEST CASES
@@ -223,13 +354,14 @@ void test_insertSortedLL() {
     insertSortedLL(&ll, 7);
     insertSortedLL(&ll, 9);
     int expected[] = {2, 3, 5, 7, 9};
-    compareListWithDetails(&ll, expected, 5, "Test 2: Insert in ascending order");
+    TEST_ASSERT_LL_EQ(&ll, expected, 5, "Test 2: Insert in ascending order");
     
     // Test 3
     result = insertSortedLL(&ll, 8);
     TEST_ASSERT_INT_EQ(result, 4, "Test 3: Insert in middle - return value");
     int expected2[] = {2, 3, 5, 7, 8, 9};
-    compareListWithDetails(&ll, expected2, 6, "Test 3: Insert in middle - list check");
+    TEST_ASSERT_LL_EQ(&ll, expected2, 6, "Test 3: Insert in middle - list check");
+
     
     // Test 4
     result = insertSortedLL(&ll, 5);
@@ -264,8 +396,8 @@ void test_alternateMergeLL() {
     alternateMergeLinkedList(&ll1, &ll2);
     int expected1[] = {1, 4, 2, 5, 3, 6};
     int expected2[] = {7};
-    compareListWithDetails(&ll1, expected1, 6, "Test 1: Basic merge - ll1");
-    compareListWithDetails(&ll2, expected2, 1, "Test 1: Basic merge - ll2");
+    TEST_ASSERT_LL_EQ(&ll1, expected1, 6, "Test 1: Basic merge - ll1");
+    TEST_ASSERT_LL_EQ(&ll2, expected2, 1, "Test 1: Basic merge - ll2");
     removeAllItems(&ll1);
     removeAllItems(&ll2);
     
@@ -276,7 +408,8 @@ void test_alternateMergeLL() {
     for (int i = 10; i <= 12; i++) insertNode(&ll2, ll2.size, i);
     
     alternateMergeLinkedList(&ll1, &ll2);
-    TEST_ASSERT_INT_EQ(ll1.size, 9, "Test 2: ll1 larger - size check");
+    int expected3[] = {1, 10, 2, 11, 3, 12, 4, 5, 6};
+    TEST_ASSERT_LL_EQ(&ll1, expected3, 9, "Test 2: ll1 larger - size check");
     TEST_ASSERT_INT_EQ(ll2.size, 0, "Test 2: ll2 becomes empty");
     removeAllItems(&ll1);
     removeAllItems(&ll2);
@@ -287,7 +420,8 @@ void test_alternateMergeLL() {
     insertNode(&ll1, 0, 1);
     insertNode(&ll1, 1, 2);
     alternateMergeLinkedList(&ll1, &ll2);
-    TEST_ASSERT_INT_EQ(ll1.size, 2, "Test 3: Empty ll2 - no change");
+    int expected4[] = {1, 2};
+    TEST_ASSERT_LL_EQ(&ll1, expected4, 2, "Test 3: Empty ll2 - no change");
     removeAllItems(&ll1);
 }
 
@@ -301,7 +435,7 @@ void test_moveOddItemsToBack() {
     for (int i = 0; i < 6; i++) insertNode(&ll, ll.size, input1[i]);
     moveOddItemsToBack(&ll);
     int expected1[] = {2, 4, 18, 3, 7, 15};
-    compareListWithDetails(&ll, expected1, 6, "Test 1: Mixed odd and even");
+    TEST_ASSERT_LL_EQ(&ll, expected1, 6, "Test 1: Mixed odd and even");
     removeAllItems(&ll);
     
     // Test 2
@@ -310,7 +444,7 @@ void test_moveOddItemsToBack() {
     for (int i = 0; i < 6; i++) insertNode(&ll, ll.size, input2[i]);
     moveOddItemsToBack(&ll);
     int expected2[] = {2, 18, 4, 7, 3, 15};
-    compareListWithDetails(&ll, expected2, 6, "Test 2: Another arrangement");
+    TEST_ASSERT_LL_EQ(&ll, expected2, 6, "Test 2: Another arrangement");
     removeAllItems(&ll);
     
     // Test 3
@@ -318,7 +452,7 @@ void test_moveOddItemsToBack() {
     int input3[] = {1, 3, 5};
     for (int i = 0; i < 3; i++) insertNode(&ll, ll.size, input3[i]);
     moveOddItemsToBack(&ll);
-    compareListWithDetails(&ll, input3, 3, "Test 3: All odd numbers");
+    TEST_ASSERT_LL_EQ(&ll, input3, 3, "Test 3: All odd numbers");
     removeAllItems(&ll);
     
     // Test 4
@@ -326,7 +460,7 @@ void test_moveOddItemsToBack() {
     int input4[] = {2, 4, 6};
     for (int i = 0; i < 3; i++) insertNode(&ll, ll.size, input4[i]);
     moveOddItemsToBack(&ll);
-    compareListWithDetails(&ll, input4, 3, "Test 4: All even numbers");
+    TEST_ASSERT_LL_EQ(&ll, input4, 3, "Test 4: All even numbers");
     removeAllItems(&ll);
 }
 
@@ -340,7 +474,7 @@ void test_moveEvenItemsToBack() {
     for (int i = 0; i < 6; i++) insertNode(&ll, ll.size, input1[i]);
     moveEvenItemsToBack(&ll);
     int expected1[] = {3, 7, 15, 2, 4, 18};
-    compareListWithDetails(&ll, expected1, 6, "Test 1: Mixed odd and even");
+    TEST_ASSERT_LL_EQ(&ll, expected1, 6, "Test 1: Mixed odd and even");
     removeAllItems(&ll);
     
     // Test 2
@@ -349,7 +483,7 @@ void test_moveEvenItemsToBack() {
     for (int i = 0; i < 6; i++) insertNode(&ll, ll.size, input2[i]);
     moveEvenItemsToBack(&ll);
     int expected2[] = {7, 3, 15, 2, 18, 4};
-    compareListWithDetails(&ll, expected2, 6, "Test 2: Another arrangement");
+    TEST_ASSERT_LL_EQ(&ll, expected2, 6, "Test 2: Another arrangement");
     removeAllItems(&ll);
     
     // Test 3
@@ -357,7 +491,7 @@ void test_moveEvenItemsToBack() {
     int input3[] = {1, 3, 5};
     for (int i = 0; i < 3; i++) insertNode(&ll, ll.size, input3[i]);
     moveEvenItemsToBack(&ll);
-    compareListWithDetails(&ll, input3, 3, "Test 3: All odd numbers");
+    TEST_ASSERT_LL_EQ(&ll, input3, 3, "Test 3: All odd numbers");
     removeAllItems(&ll);
     
     // Test 4
@@ -365,7 +499,7 @@ void test_moveEvenItemsToBack() {
     int input4[] = {2, 4, 6};
     for (int i = 0; i < 3; i++) insertNode(&ll, ll.size, input4[i]);
     moveEvenItemsToBack(&ll);
-    compareListWithDetails(&ll, input4, 3, "Test 4: All even numbers");
+    TEST_ASSERT_LL_EQ(&ll, input4, 3, "Test 4: All even numbers");
     removeAllItems(&ll);
 }
 
@@ -382,8 +516,8 @@ void test_frontBackSplitLL() {
     frontBackSplitLinkedList(&ll, &front, &back);
     int expectedFront1[] = {2, 3, 5};
     int expectedBack1[] = {6, 7};
-    compareListWithDetails(&front, expectedFront1, 3, "Test 1: Odd elements - front");
-    compareListWithDetails(&back, expectedBack1, 2, "Test 1: Odd elements - back");
+    TEST_ASSERT_LL_EQ(&front, expectedFront1, 3, "Test 1: Odd elements - front");
+    TEST_ASSERT_LL_EQ(&back, expectedBack1, 2, "Test 1: Odd elements - back");
     removeAllItems(&front);
     removeAllItems(&back);
     
@@ -394,8 +528,8 @@ void test_frontBackSplitLL() {
     frontBackSplitLinkedList(&ll, &front, &back);
     int expectedFront2[] = {1, 2};
     int expectedBack2[] = {3, 4};
-    compareListWithDetails(&front, expectedFront2, 2, "Test 2: Even elements - front");
-    compareListWithDetails(&back, expectedBack2, 2, "Test 2: Even elements - back");
+    TEST_ASSERT_LL_EQ(&front, expectedFront2, 2, "Test 2: Even elements - front");
+    TEST_ASSERT_LL_EQ(&back, expectedBack2, 2, "Test 2: Even elements - back");
     removeAllItems(&front);
     removeAllItems(&back);
     
@@ -404,7 +538,7 @@ void test_frontBackSplitLL() {
     insertNode(&ll, 0, 42);
     frontBackSplitLinkedList(&ll, &front, &back);
     int expectedFront3[] = {42};
-    compareListWithDetails(&front, expectedFront3, 1, "Test 3: Single element - front");
+    TEST_ASSERT_LL_EQ(&front, expectedFront3, 1, "Test 3: Single element - front");
     TEST_ASSERT_INT_EQ(back.size, 0, "Test 3: Single element - back empty");
     removeAllItems(&front);
     removeAllItems(&back);
@@ -420,7 +554,7 @@ void test_moveMaxToFront() {
     for (int i = 0; i < 5; i++) insertNode(&ll, ll.size, input1[i]);
     moveMaxToFront(&(ll.head));
     int expected1[] = {70, 30, 20, 40, 50};
-    compareListWithDetails(&ll, expected1, 5, "Test 1: Max in middle");
+    TEST_ASSERT_LL_EQ(&ll, expected1, 5, "Test 1: Max in middle");
     removeAllItems(&ll);
     
     // Test 2
@@ -429,7 +563,7 @@ void test_moveMaxToFront() {
     for (int i = 0; i < 5; i++) insertNode(&ll, ll.size, input2[i]);
     moveMaxToFront(&(ll.head));
     int expected2[] = {50, 10, 20, 30, 40};
-    compareListWithDetails(&ll, expected2, 5, "Test 2: Max at end");
+    TEST_ASSERT_LL_EQ(&ll, expected2, 5, "Test 2: Max at end");
     removeAllItems(&ll);
     
     // Test 3
@@ -437,7 +571,7 @@ void test_moveMaxToFront() {
     int input3[] = {100, 20, 30};
     for (int i = 0; i < 3; i++) insertNode(&ll, ll.size, input3[i]);
     moveMaxToFront(&(ll.head));
-    compareListWithDetails(&ll, input3, 3, "Test 3: Max already at front");
+    TEST_ASSERT_LL_EQ(&ll, input3, 3, "Test 3: Max already at front");
     removeAllItems(&ll);
     
     // Test 4
@@ -445,7 +579,7 @@ void test_moveMaxToFront() {
     insertNode(&ll, 0, 42);
     moveMaxToFront(&(ll.head));
     int expected4[] = {42};
-    compareListWithDetails(&ll, expected4, 1, "Test 4: Single element");
+    TEST_ASSERT_LL_EQ(&ll, expected4, 1, "Test 4: Single element");
     removeAllItems(&ll);
 }
 
@@ -459,7 +593,7 @@ void test_recursiveReverse() {
     for (int i = 0; i < 5; i++) insertNode(&ll, ll.size, input1[i]);
     RecursiveReverse(&(ll.head));
     int expected1[] = {5, 4, 3, 2, 1};
-    compareListWithDetails(&ll, expected1, 5, "Test 1: Reverse 5 elements");
+    TEST_ASSERT_LL_EQ(&ll, expected1, 5, "Test 1: Reverse 5 elements");
     removeAllItems(&ll);
     
     // Test 2
@@ -468,7 +602,7 @@ void test_recursiveReverse() {
     for (int i = 0; i < 2; i++) insertNode(&ll, ll.size, input2[i]);
     RecursiveReverse(&(ll.head));
     int expected2[] = {20, 10};
-    compareListWithDetails(&ll, expected2, 2, "Test 2: Reverse 2 elements");
+    TEST_ASSERT_LL_EQ(&ll, expected2, 2, "Test 2: Reverse 2 elements");
     removeAllItems(&ll);
     
     // Test 3
@@ -476,7 +610,7 @@ void test_recursiveReverse() {
     insertNode(&ll, 0, 18);
     RecursiveReverse(&(ll.head));
     int expected3[] = {18};
-    compareListWithDetails(&ll, expected3, 1, "Test 3: Single element");
+    TEST_ASSERT_LL_EQ(&ll, expected3, 1, "Test 3: Single element");
     removeAllItems(&ll);
     
     // Test 4
@@ -485,7 +619,7 @@ void test_recursiveReverse() {
     for (int i = 0; i < 3; i++) insertNode(&ll, ll.size, input4[i]);
     RecursiveReverse(&(ll.head));
     int expected4[] = {3, 2, 1};
-    compareListWithDetails(&ll, expected4, 3, "Test 4: Reverse 3 elements");
+    TEST_ASSERT_LL_EQ(&ll, expected4, 3, "Test 4: Reverse 3 elements");
     removeAllItems(&ll);
 }
 
@@ -495,23 +629,30 @@ void test_recursiveReverse() {
 
 void print_test_summary() {
     printf("\n");
-    printf("╔════════════════════════════════════════════════════════╗\n");
-    printf("║               TEST SUITE SUMMARY                       ║\n");
-    printf("╠════════════════════════════════════════════════════════╣\n");
-    printf("║  Total Tests:  %-4d                                    ║\n", global_stats.total_tests);
-    printf("║  Passed:       %-4d  ✅                                ║\n", global_stats.passed_tests);
-    printf("║  Failed:       %-4d  ❌                                ║\n", global_stats.failed_tests);
-    printf("╠════════════════════════════════════════════════════════╣\n");
+    printf("╔═══════════════════════════════════════════════════════╗\n");
+    printf("║               TEST SUITE SUMMARY                      ║\n");
+    printf("╠═══════════════════════════════════════════════════════╣\n");
+    printf("║  Total Tests:  %-4d                                   ║\n", global_stats.total_tests);
+    printf("║  Passed:       %-4d  ✅                               ║\n", global_stats.passed_tests);
+    printf("║  Failed:       %-4d  ❌                               ║\n", global_stats.failed_tests);
+    printf("║  Crashed:      %-4d  🔴                               ║\n", global_stats.crashed_tests);
+    printf("║  Timeout:      %-4d  ⏱️                                ║\n", global_stats.timeout_tests);
+    printf("╠═══════════════════════════════════════════════════════╣\n");
     
-    if (global_stats.failed_tests == 0) {
-        printf("║  🎉 ALL TESTS PASSED! 🎉                              ║\n");
+    if (global_stats.failed_tests == 0 && global_stats.crashed_tests == 0 && global_stats.timeout_tests == 0) {
+        printf("║  🎉 ALL TESTS PASSED! 🎉                             ║\n");
     } else {
         double pass_rate = (double)global_stats.passed_tests / global_stats.total_tests * 100;
-        printf("║  Pass Rate: %.1f%%                                     ║\n", pass_rate);
-        printf("║  ⚠️  Some tests failed. Review errors above.          ║\n");
+        printf("║  Pass Rate: %.1f%%                                    ║\n", pass_rate);
+        if (global_stats.failed_tests > 0)
+            printf("║  ⚠️  Some tests failed. Review errors above.         ║\n");
+        if (global_stats.crashed_tests > 0)
+            printf("║  🔴 Some tests crashed. Check for memory errors.     ║\n");
+        if (global_stats.timeout_tests > 0)
+            printf("║  ⏱️  Some tests timed out. Check for infinite loops. ║\n");
     }
     
-    printf("╚════════════════════════════════════════════════════════╝\n");
+    printf("╚═══════════════════════════════════════════════════════╝\n");
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -519,22 +660,26 @@ void print_test_summary() {
 //////////////////////////////////////////////////////////////////////////////////
 
 int main() {
-    printf("╔════════════════════════════════════════════════════════╗\n");
-    printf("║  Linked List Test Suite - All 7 Questions             ║\n");
-    printf("║  Enhanced with Detailed Error Reporting               ║\n");
-    printf("╚════════════════════════════════════════════════════════╝\n");
+    setup_error_detection();
     
-    test_insertSortedLL();
-    test_alternateMergeLL();
-    test_moveOddItemsToBack();
-    test_moveEvenItemsToBack();
-    test_frontBackSplitLL();
-    test_moveMaxToFront();
-    test_recursiveReverse();
+    printf("╔═══════════════════════════════════════════════════════╗\n");
+    printf("║  Linked List Test Suite - All 7 Questions            ║\n");
+    printf("║  Enhanced with Crash & Error Detection               ║\n");
+    printf("╚═══════════════════════════════════════════════════════╝\n");
+    
+    RUN_SAFE_TEST(test_insertSortedLL);
+    RUN_SAFE_TEST(test_alternateMergeLL);
+    RUN_SAFE_TEST(test_moveOddItemsToBack);
+    RUN_SAFE_TEST(test_moveEvenItemsToBack);
+    RUN_SAFE_TEST(test_frontBackSplitLL);
+    RUN_SAFE_TEST(test_moveMaxToFront);
+    RUN_SAFE_TEST(test_recursiveReverse);
     
     print_test_summary();
     
-    return (global_stats.failed_tests == 0) ? 0 : 1;
+    return (global_stats.failed_tests == 0 && 
+            global_stats.crashed_tests == 0 && 
+            global_stats.timeout_tests == 0) ? 0 : 1;
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -542,7 +687,7 @@ int main() {
 //////////////////////////////////////////////////////////////////////////////////
 
 int insertSortedLL(LinkedList *ll, int item) {
-    return 0;
+
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -550,7 +695,7 @@ int insertSortedLL(LinkedList *ll, int item) {
 //////////////////////////////////////////////////////////////////////////////////
 
 void alternateMergeLinkedList(LinkedList *ll1, LinkedList *ll2) {
-    
+
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -558,7 +703,7 @@ void alternateMergeLinkedList(LinkedList *ll1, LinkedList *ll2) {
 //////////////////////////////////////////////////////////////////////////////////
 
 void moveOddItemsToBack(LinkedList *ll) {
-    
+
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -574,7 +719,7 @@ void moveEvenItemsToBack(LinkedList *list) {
 //////////////////////////////////////////////////////////////////////////////////
 
 void frontBackSplitLinkedList(LinkedList *ll, LinkedList *resultFrontList, LinkedList *resultBackList) {
-    
+
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -590,5 +735,5 @@ int moveMaxToFront(ListNode **ptrHead) {
 //////////////////////////////////////////////////////////////////////////////////
 
 void RecursiveReverse(ListNode **ptrHead) {
-    
+
 }

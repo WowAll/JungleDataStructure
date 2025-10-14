@@ -1,10 +1,72 @@
 //////////////////////////////////////////////////////////////////////////////////
-/* Enhanced Binary Tree Test Suite with Detailed Error Reporting */
+/* Enhanced Binary Tree Test Suite with Crash & Error Detection */
 //////////////////////////////////////////////////////////////////////////////////
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <signal.h>
+#include <setjmp.h>
+#include <unistd.h>
+
+//////////////////////////////////////////////////////////////////////////////////
+// Error Detection System
+//////////////////////////////////////////////////////////////////////////////////
+
+static jmp_buf test_env;
+static volatile sig_atomic_t timeout_occurred = 0;
+static const char* current_test_name = NULL;
+
+#define TEST_TIMEOUT_SECONDS 3
+
+void crash_handler(int sig) {
+    const char* error_type = "UNKNOWN";
+    
+    switch(sig) {
+        case SIGSEGV:
+            error_type = "SEGMENTATION FAULT (accessing invalid memory)";
+            break;
+        case SIGFPE:
+            error_type = "FLOATING POINT EXCEPTION (division by zero)";
+            break;
+        case SIGABRT:
+            error_type = "ABORT (program terminated abnormally)";
+            break;
+        case SIGILL:
+            error_type = "ILLEGAL INSTRUCTION";
+            break;
+    }
+    
+    printf("\n🔴 CRASH DETECTED: %s\n", error_type);
+    printf("   In test: %s\n", current_test_name ? current_test_name : "Unknown");
+    printf("   Signal: %d\n", sig);
+    
+    longjmp(test_env, sig);
+}
+
+void timeout_handler(int sig) {
+    timeout_occurred = 1;
+    printf("\n⏱️  TIMEOUT: Test exceeded %d seconds (possible infinite loop)\n", TEST_TIMEOUT_SECONDS);
+    printf("   In test: %s\n", current_test_name ? current_test_name : "Unknown");
+    longjmp(test_env, SIGALRM);
+}
+
+void setup_error_detection() {
+    signal(SIGSEGV, crash_handler);
+    signal(SIGFPE, crash_handler);
+    signal(SIGABRT, crash_handler);
+    signal(SIGILL, crash_handler);
+    signal(SIGALRM, timeout_handler);
+}
+
+void start_timeout() {
+    timeout_occurred = 0;
+    alarm(TEST_TIMEOUT_SECONDS);
+}
+
+void stop_timeout() {
+    alarm(0);
+}
 
 //////////////////////////////////////////////////////////////////////////////////
 // Test Statistics
@@ -14,9 +76,11 @@ typedef struct {
     int total_tests;
     int passed_tests;
     int failed_tests;
+    int crashed_tests;
+    int timeout_tests;
 } TestStats;
 
-TestStats global_stats = {0, 0, 0};
+TestStats global_stats = {0, 0, 0, 0, 0};
 
 //////////////////////////////////////////////////////////////////////////////////
 // Enhanced Assertion Macros
@@ -30,6 +94,34 @@ TestStats global_stats = {0, 0, 0};
         printf("   Expected: %d\n", (expected)); \
         printf("   Actual:   %d\n", (actual)); \
         printf("   Location: Line %d\n", __LINE__); \
+        return; \
+    } else { \
+        global_stats.passed_tests++; \
+        printf("✓ %s\n", test_name); \
+    } \
+} while(0)
+
+#define TEST_ASSERT_ARRAY_EQ(actual_array, expected_array, count, test_name) do { \
+    global_stats.total_tests++; \
+    int match = 1; \
+    for (int i = 0; i < (count); i++) { \
+        if ((actual_array)[i] != (expected_array)[i]) { \
+            match = 0; \
+            break; \
+        } \
+    } \
+    if (!match) { \
+        global_stats.failed_tests++; \
+        printf("❌ FAILED: %s\n", test_name); \
+        printf("   Expected: "); \
+        for (int i = 0; i < (count); i++) { \
+            printf("%d ", (expected_array)[i]); \
+        } \
+        printf("\n   Actual:   "); \
+        for (int i = 0; i < (count); i++) { \
+            printf("%d ", (actual_array)[i]); \
+        } \
+        printf("\n   Location: Line %d\n", __LINE__); \
         return; \
     } else { \
         global_stats.passed_tests++; \
@@ -148,7 +240,6 @@ int compareTreesDetailed(BTNode *tree1, BTNode *tree2, const char *test_name, in
         return 0;
     }
     
-    // Recursively check without printing (to avoid duplicate stats)
     int left_match = 1, right_match = 1;
     
     if ((tree1->left == NULL) != (tree2->left == NULL) || 
@@ -171,7 +262,6 @@ int compareTreesDetailed(BTNode *tree1, BTNode *tree2, const char *test_name, in
             printf("   Actual:\n");
             printTreeStructure(tree1, 1, "");
         }
-        global_stats.total_tests--; // Compensate for the increment at start
         return 0;
     }
     
@@ -180,7 +270,6 @@ int compareTreesDetailed(BTNode *tree1, BTNode *tree2, const char *test_name, in
     return 1;
 }
 
-// For testing print functions
 static int printed_values[100];
 static int printed_count = 0;
 
@@ -206,6 +295,28 @@ void mirrorTree(BTNode *node);
 void printSmallerValues(BTNode *node, int m);
 int smallestValue(BTNode *node);
 int hasGreatGrandchild(BTNode *node);
+
+//////////////////////////////////////////////////////////////////////////////////
+// SAFE TEST WRAPPER
+//////////////////////////////////////////////////////////////////////////////////
+
+#define RUN_SAFE_TEST(test_func) do { \
+    int sig; \
+    current_test_name = #test_func; \
+    start_timeout(); \
+    if ((sig = setjmp(test_env)) == 0) { \
+        test_func(); \
+    } else { \
+        global_stats.passed_tests--; \
+        if (sig == SIGALRM) { \
+            global_stats.timeout_tests++; \
+        } else { \
+            global_stats.crashed_tests++; \
+        } \
+    } \
+    stop_timeout(); \
+    current_test_name = NULL; \
+} while(0)
 
 //////////////////////////////////////////////////////////////////////////////////
 // TEST CASES
@@ -374,7 +485,8 @@ void test_mirrorTree() {
     expected->right->right = createBTNode(1);
     
     mirrorTree(tree);
-    compareTreesDetailed(tree, expected, "Test 1: Mirror tree", 1);
+    if(!compareTreesDetailed(tree, expected, "Test 1: Mirror tree", 1))
+        return;
     removeAll(&tree);
     removeAll(&expected);
     
@@ -388,6 +500,7 @@ void test_mirrorTree() {
     } else {
         global_stats.failed_tests++;
         printf("❌ FAILED: Test 2: Single node changed\n");
+        return;
     }
     removeAll(&tree);
     
@@ -401,6 +514,7 @@ void test_mirrorTree() {
     } else {
         global_stats.failed_tests++;
         printf("❌ FAILED: Test 3: NULL tree modified\n");
+        return;
     }
     
     // Test 4
@@ -408,7 +522,8 @@ void test_mirrorTree() {
     expected = createSampleTree2();
     mirrorTree(tree);
     mirrorTree(tree);
-    compareTreesDetailed(tree, expected, "Test 4: Double mirror", 0);
+    if(!compareTreesDetailed(tree, expected, "Test 4: Double mirror", 0))
+        return;
     removeAll(&tree);
     removeAll(&expected);
 }
@@ -428,17 +543,9 @@ void test_printSmallerValues() {
     
     reset_printed();
     printSmallerValues(tree, 55);
-    global_stats.total_tests++;
-    if (printed_count == 4 && printed_values[0] == 50 && printed_values[1] == 30 && printed_values[2] == 25 && printed_values[3] == 10) {
-        global_stats.passed_tests++;
-        printf("✓ Test 1: Found 4 values < 55\n");
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 1: Expected 50, 30, 25, 10 values, got ");
-        for (int i = 0; i < printed_count; i++)
-            printf("%d ", printed_values[i]);
-        printf("\n");
-    }
+    int expected_values[] = {50, 30, 25, 10};
+    TEST_ASSERT_ARRAY_EQ(printed_values, expected_values, 4, "Test 1: Found 4 values < 55");
+    
     removeAll(&tree);
     
     // Test 2
@@ -447,17 +554,8 @@ void test_printSmallerValues() {
     reset_printed();
     printed_count = 0;
     printSmallerValues(tree, 50);
-    global_stats.total_tests++;
-    if (printed_count == 0) {
-        global_stats.passed_tests++;
-        printf("✓ Test 2: No values smaller\n");
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 2: Expected 0 values, got ");
-        for (int i = 0; i < printed_count; i++)
-            printf("%d ", printed_values[i]);
-        printf("\n");
-    }
+    TEST_ASSERT_INT_EQ(printed_count, 0, "Test 2: No values smaller");
+    
     removeAll(&tree);
     
     // Test 3
@@ -467,17 +565,8 @@ void test_printSmallerValues() {
     reset_printed();
     printed_count = 0;
     printSmallerValues(tree, 100);
-    global_stats.total_tests++;
-    if (printed_values[0] == 10 && printed_values[1] == 5 && printed_values[2] == 15) {
-        global_stats.passed_tests++;
-        printf("✓ Test 3: All values smaller\n");
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 3: Expected 3 values, got ");
-        for (int i = 0; i < printed_count; i++)
-            printf("%d ", printed_values[i]);
-        printf("\n");
-    }
+    int expected_values3[] = {10, 5, 15};
+    TEST_ASSERT_ARRAY_EQ(printed_values, expected_values3, 3, "Test 3: All values smaller");
     removeAll(&tree);
 }
 
@@ -541,28 +630,16 @@ void test_hasGreatGrandchild() {
     
     reset_printed();
     hasGreatGrandchild(tree);
-    global_stats.total_tests++;
-    if (printed_count == 1 && printed_values[0] == 50) {
-        global_stats.passed_tests++;
-        printf("✓ Test 1: Found 1 node (50)\n");
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 1: Expected 1 node (50), got %d nodes\n", printed_count);
-    }
+    int expected_values1[] = {50};
+    TEST_ASSERT_ARRAY_EQ(printed_values, expected_values1, 1, "Test 1: Found 1 node (50)");
     removeAll(&tree);
     
     // Test 2
     tree = createSampleTree2();
     reset_printed();
     hasGreatGrandchild(tree);
-    global_stats.total_tests++;
-    if (printed_count == 0) {
-        global_stats.passed_tests++;
-        printf("✓ Test 2: No great-grandchildren\n");
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 2: Expected 0, got %d\n", printed_count);
-    }
+    int expected_values2[] = {};
+    TEST_ASSERT_ARRAY_EQ(printed_values, expected_values2, 0, "Test 2: No great-grandchildren");
     removeAll(&tree);
     
     // Test 3
@@ -579,17 +656,8 @@ void test_hasGreatGrandchild() {
     
     reset_printed();
     hasGreatGrandchild(tree);
-    global_stats.total_tests++;
-    if (printed_count == 2 && printed_values[0] == 3 && printed_values[1] == 1) {
-        global_stats.passed_tests++;
-        printf("✓ Test 3: Found 2 nodes\n");
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 3: Expected 3, 1 values, got ");
-        for (int i = 0; i < printed_count; i++)
-            printf("%d ", printed_values[i]);
-        printf("\n");
-    }
+    int expected_values3[] = {3, 1};
+    TEST_ASSERT_ARRAY_EQ(printed_values, expected_values3, 2, "Test 3: Found 2 nodes");
     removeAll(&tree);
 }
 
@@ -599,23 +667,30 @@ void test_hasGreatGrandchild() {
 
 void print_test_summary() {
     printf("\n");
-    printf("╔════════════════════════════════════════════════════════╗\n");
-    printf("║               TEST SUITE SUMMARY                       ║\n");
-    printf("╠════════════════════════════════════════════════════════╣\n");
-    printf("║  Total Tests:  %-4d                                    ║\n", global_stats.total_tests);
-    printf("║  Passed:       %-4d  ✅                                ║\n", global_stats.passed_tests);
-    printf("║  Failed:       %-4d  ❌                                ║\n", global_stats.failed_tests);
-    printf("╠════════════════════════════════════════════════════════╣\n");
+    printf("╔═══════════════════════════════════════════════════════╗\n");
+    printf("║               TEST SUITE SUMMARY                      ║\n");
+    printf("╠═══════════════════════════════════════════════════════╣\n");
+    printf("║  Total Tests:  %-4d                                   ║\n", global_stats.total_tests);
+    printf("║  Passed:       %-4d  ✅                               ║\n", global_stats.passed_tests);
+    printf("║  Failed:       %-4d  ❌                               ║\n", global_stats.failed_tests);
+    printf("║  Crashed:      %-4d  🔴                               ║\n", global_stats.crashed_tests);
+    printf("║  Timeout:      %-4d  ⏱️                                ║\n", global_stats.timeout_tests);
+    printf("╠═══════════════════════════════════════════════════════╣\n");
     
-    if (global_stats.failed_tests == 0) {
-        printf("║  🎉 ALL TESTS PASSED! 🎉                              ║\n");
+    if (global_stats.failed_tests == 0 && global_stats.crashed_tests == 0 && global_stats.timeout_tests == 0) {
+        printf("║  🎉 ALL TESTS PASSED! 🎉                             ║\n");
     } else {
         double pass_rate = (double)global_stats.passed_tests / global_stats.total_tests * 100;
-        printf("║  Pass Rate: %.1f%%                                     ║\n", pass_rate);
-        printf("║  ⚠️  Some tests failed. Review errors above.          ║\n");
+        printf("║  Pass Rate: %.1f%%                                    ║\n", pass_rate);
+        if (global_stats.failed_tests > 0)
+            printf("║  ⚠️  Some tests failed. Review errors above.         ║\n");
+        if (global_stats.crashed_tests > 0)
+            printf("║  🔴 Some tests crashed. Check for memory errors.     ║\n");
+        if (global_stats.timeout_tests > 0)
+            printf("║  ⏱️  Some tests timed out. Check for infinite loops. ║\n");
     }
     
-    printf("╚════════════════════════════════════════════════════════╝\n");
+    printf("╚═══════════════════════════════════════════════════════╝\n");
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -623,23 +698,27 @@ void print_test_summary() {
 //////////////////////////////////////////////////////////////////////////////////
 
 int main() {
-    printf("╔════════════════════════════════════════════════════════╗\n");
-    printf("║  Binary Tree Test Suite - All 8 Questions             ║\n");
-    printf("║  Enhanced with Detailed Error Reporting               ║\n");
-    printf("╚════════════════════════════════════════════════════════╝\n");
+    setup_error_detection();
     
-    test_identical();
-    test_maxHeight();
-    test_countOneChildNodes();
-    test_sumOfOddNodes();
-    test_mirrorTree();
-    test_printSmallerValues();
-    test_smallestValue();
-    test_hasGreatGrandchild();
+    printf("╔═══════════════════════════════════════════════════════╗\n");
+    printf("║  Binary Tree Test Suite - All 8 Questions            ║\n");
+    printf("║  Enhanced with Crash & Error Detection               ║\n");
+    printf("╚═══════════════════════════════════════════════════════╝\n");
+    
+    RUN_SAFE_TEST(test_identical);
+    RUN_SAFE_TEST(test_maxHeight);
+    RUN_SAFE_TEST(test_countOneChildNodes);
+    RUN_SAFE_TEST(test_sumOfOddNodes);
+    RUN_SAFE_TEST(test_mirrorTree);
+    RUN_SAFE_TEST(test_printSmallerValues);
+    RUN_SAFE_TEST(test_smallestValue);
+    RUN_SAFE_TEST(test_hasGreatGrandchild);
     
     print_test_summary();
     
-    return (global_stats.failed_tests == 0) ? 0 : 1;
+    return (global_stats.failed_tests == 0 && 
+            global_stats.crashed_tests == 0 && 
+            global_stats.timeout_tests == 0) ? 0 : 1;
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -662,7 +741,8 @@ int maxHeight(BTNode *node) {
 // Q3: countOneChildNodes
 //////////////////////////////////////////////////////////////////////////////////
 
-int countOneChildNodes(BTNode *node) {
+int countOneChildNodes(BTNode *node)
+{
     return 0;
 }
 
@@ -691,12 +771,13 @@ void printSmallerValues(BTNode *node, int m) {
     return;
 }
 
+
 //////////////////////////////////////////////////////////////////////////////////
 // Q7: smallestValue
 //////////////////////////////////////////////////////////////////////////////////
 
 int smallestValue(BTNode *node) {
-    return 0;
+    
 }
 
 //////////////////////////////////////////////////////////////////////////////////

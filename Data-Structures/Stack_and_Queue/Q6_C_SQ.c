@@ -118,10 +118,9 @@ void removeUntil(Stack *s, int value)
 	temp.ll.head = NULL;
 	temp.ll.size = 0;
 	int cur = pop(s);
-	while (cur &&cur != value) {
+	while (s->ll.size > 0 && cur != value) {
 		push(&temp, cur);
 		cur = pop(s);
-		temp.ll.size++;
 	}
 	if (cur)
 		push(&temp, cur);
