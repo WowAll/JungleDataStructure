@@ -505,7 +505,6 @@ void test_mirrorTree() {
     removeAll(&tree);
     
     // Test 3
-    tree = NULL;
     mirrorTree(tree);
     global_stats.total_tests++;
     if (tree == NULL) {
@@ -586,8 +585,8 @@ void test_smallestValue() {
     removeAll(&tree);
     
     // Test 2
-    tree = createBTNode(42);
-    TEST_ASSERT_INT_EQ(smallestValue(tree), 42, "Test 2: Single node = 42");
+    tree = createBTNode(18);
+    TEST_ASSERT_INT_EQ(smallestValue(tree), 18, "Test 2: Single node = 18");
     removeAll(&tree);
     
     // Test 3

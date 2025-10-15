@@ -486,14 +486,7 @@ void test_isStackPairwiseConsecutive() {
     for (int i = 0; i < 5; i++) push(&s, input3[4-i]);
     int result = isStackPairwiseConsecutive(&s);
     global_stats.total_tests++;
-    if (result == 0) {
-        global_stats.passed_tests++;
-        printf("✓ Test 3: {16, 15, 11, 10, 5} Odd elements handled (result=%d)\n", result);
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 3: Invalid return value %d\n", result);
-        return;
-    }
+    TEST_ASSERT_INT_EQ(result, 0, "Test 3: {16, 15, 11, 10, 5} Odd elements handled (result=0)");
     removeAllItemsFromStack(&s);
     
     // Test 4
@@ -592,14 +585,7 @@ void test_removeUntil() {
     int orig_size = s.ll.size;
     removeUntil(&s, 99);
     global_stats.total_tests++;
-    if (s.ll.size == orig_size || s.ll.size == 0) {
-        global_stats.passed_tests++;
-        printf("✓ Test 3: {1, 2, 3} Value not found (size=%d)\n", s.ll.size);
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 3: Unexpected size change\n");
-        return;
-    }
+    TEST_ASSERT_LL_EQ(&s.ll, input3, 3, "Test 3: {1, 2, 3} Value not found (size=3)");
     removeAllItemsFromStack(&s);
 }
 

@@ -86,6 +86,21 @@ TestStats global_stats = {0, 0, 0, 0, 0};
 // Enhanced Assertion Macros
 //////////////////////////////////////////////////////////////////////////////////
 
+#define TEST_ASSERT_INT_EQ(actual, expected, test_name) do { \
+    global_stats.total_tests++; \
+    if ((actual) != (expected)) { \
+        global_stats.failed_tests++; \
+        printf("❌ FAILED: %s\n", test_name); \
+        printf("   Expected: %d\n", (expected)); \
+        printf("   Actual:   %d\n", (actual)); \
+        printf("   Location: Line %d\n", __LINE__); \
+        return; \
+    } else { \
+        global_stats.passed_tests++; \
+        printf("✓ %s\n", test_name); \
+    } \
+} while(0)
+
 #define TEST_ASSERT_ARRAY_EQ(actual_array, expected_array, count, test_name) do { \
     global_stats.total_tests++; \
     int match = 1; \
@@ -308,6 +323,7 @@ void inOrderIterative(BSTNode *root);
 void preOrderIterative(BSTNode *root);
 void postOrderIterativeS1(BSTNode *root);
 void postOrderIterativeS2(BSTNode *root);
+BSTNode* removeNodeFromTree(BSTNode *root, int value);
 
 //////////////////////////////////////////////////////////////////////////////////
 // SAFE TEST WRAPPER
@@ -367,14 +383,8 @@ void test_levelOrderTraversal() {
     reset_capture();
     levelOrderTraversal(tree);
     global_stats.total_tests++;
-    if (captured_count == 0) {
-        global_stats.passed_tests++;
-        printf("✓ Test 4: Empty tree returns nothing\n");
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 4: Empty tree should return nothing\n");
-        return;
-    }
+    TEST_ASSERT_INT_EQ(captured_count, 0, "Test 4: Empty tree returns nothing");
+    removeAll(&tree);
 }
 
 void test_inOrderIterative() {
@@ -410,14 +420,8 @@ void test_inOrderIterative() {
     reset_capture();
     inOrderIterative(tree);
     global_stats.total_tests++;
-    if (captured_count == 0) {
-        global_stats.passed_tests++;
-        printf("✓ Test 4: Empty tree returns nothing\n");
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 4: Empty tree should return nothing\n");
-        return;
-    }
+    TEST_ASSERT_INT_EQ(captured_count, 0, "Test 4: Empty tree returns nothing");
+    removeAll(&tree);
 }
 
 void test_preOrderIterative() {
@@ -453,14 +457,8 @@ void test_preOrderIterative() {
     reset_capture();
     preOrderIterative(tree);
     global_stats.total_tests++;
-    if (captured_count == 0) {
-        global_stats.passed_tests++;
-        printf("✓ Test 4: Empty tree returns nothing\n");
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 4: Empty tree should return nothing\n");
-        return;
-    }
+    TEST_ASSERT_INT_EQ(captured_count, 0, "Test 4: Empty tree returns nothing");
+    removeAll(&tree);
 }
 
 void test_postOrderIterativeS1() {
@@ -496,14 +494,8 @@ void test_postOrderIterativeS1() {
     reset_capture();
     postOrderIterativeS1(tree);
     global_stats.total_tests++;
-    if (captured_count == 0) {
-        global_stats.passed_tests++;
-        printf("✓ Test 4: Empty tree returns nothing\n");
-    } else {
-        global_stats.failed_tests++;
-        printf("❌ FAILED: Test 4: Empty tree should return nothing\n");
-        return;
-    }
+    TEST_ASSERT_INT_EQ(captured_count, 0, "Test 4: Empty tree returns nothing");
+    removeAll(&tree);
 }
 
 void test_postOrderIterativeS2() {
@@ -539,12 +531,82 @@ void test_postOrderIterativeS2() {
     reset_capture();
     postOrderIterativeS2(tree);
     global_stats.total_tests++;
-    if (captured_count == 0) {
+    TEST_ASSERT_INT_EQ(captured_count, 0, "Test 4: Empty tree returns nothing");
+    removeAll(&tree);
+}
+
+void test_removeNodeFromTree() {
+    printf("\n=== Testing Q5 BONUS: removeNodeFromTree ===\n");
+    BSTNode *tree;
+    
+    // Test 1: Remove leaf node (no children)
+    tree = createSampleBST1();
+    tree = removeNodeFromTree(tree, 10);
+    reset_capture();
+    inOrderIterative(tree);
+    int expected1[] = {15, 18, 20, 25, 50, 80};
+    TEST_ASSERT_ARRAY_EQ(captured_values, expected1, 6, "Test 1: Remove leaf node (10)");
+    removeAll(&tree);
+    
+    // Test 2: Remove node with one child (left)
+    tree = createSampleBST1();
+    tree = removeNodeFromTree(tree, 15);
+    reset_capture();
+    inOrderIterative(tree);
+    int expected2[] = {10, 18, 20, 25, 50, 80};
+    TEST_ASSERT_ARRAY_EQ(captured_values, expected2, 6, "Test 2: Remove node with one child (15)");
+    removeAll(&tree);
+    
+    // Test 3: Remove node with two children
+    tree = createSampleBST1();
+    tree = removeNodeFromTree(tree, 50);
+    reset_capture();
+    inOrderIterative(tree);
+    int expected3[] = {10, 15, 18, 20, 25, 80};
+    TEST_ASSERT_ARRAY_EQ(captured_values, expected3, 6, "Test 3: Remove node with two children (50)");
+    removeAll(&tree);
+    
+    // Test 4: Remove root node
+    tree = createSampleBST1();
+    tree = removeNodeFromTree(tree, 20);
+    reset_capture();
+    inOrderIterative(tree);
+    int expected4[] = {10, 15, 18, 25, 50, 80};
+    TEST_ASSERT_ARRAY_EQ(captured_values, expected4, 6, "Test 4: Remove root node (20)");
+    removeAll(&tree);
+    
+    // Test 5: Remove from single node tree
+    tree = createBSTNode(18);
+    tree = removeNodeFromTree(tree, 18);
+    global_stats.total_tests++;
+    if (tree == NULL) {
         global_stats.passed_tests++;
-        printf("✓ Test 4: Empty tree returns nothing\n");
+        printf("✓ Test 5: Remove single node leaves empty tree\n");
     } else {
         global_stats.failed_tests++;
-        printf("❌ FAILED: Test 4: Empty tree should return nothing\n");
+        printf("✗ FAILED: Test 5: Tree should be NULL after removing single node\n");
+        return;
+    }
+    
+    // Test 6: Remove non-existent value
+    tree = createSampleBST1();
+    tree = removeNodeFromTree(tree, 999);
+    reset_capture();
+    inOrderIterative(tree);
+    int expected6[] = {10, 15, 18, 20, 25, 50, 80};
+    TEST_ASSERT_ARRAY_EQ(captured_values, expected6, 7, "Test 6: Remove non-existent value (no change)");
+    removeAll(&tree);
+    
+    // Test 7: Remove from empty tree
+    tree = NULL;
+    tree = removeNodeFromTree(tree, 10);
+    global_stats.total_tests++;
+    if (tree == NULL) {
+        global_stats.passed_tests++;
+        printf("✓ Test 7: Remove from empty tree returns NULL\n");
+    } else {
+        global_stats.failed_tests++;
+        printf("✗ FAILED: Test 7: Should remain NULL\n");
         return;
     }
 }
@@ -598,6 +660,7 @@ int main() {
     RUN_SAFE_TEST(test_preOrderIterative);
     RUN_SAFE_TEST(test_postOrderIterativeS1);
     RUN_SAFE_TEST(test_postOrderIterativeS2);
+    RUN_SAFE_TEST(test_removeNodeFromTree);
     
     print_test_summary();
     
@@ -610,8 +673,7 @@ int main() {
 // Q1: levelOrderTraversal
 //////////////////////////////////////////////////////////////////////////////////
 
-void levelOrderTraversal(BSTNode* root)
-{
+void levelOrderTraversal(BSTNode* root) {
 	// use capture_print(node->item) instead of printf
 }
 
@@ -622,8 +684,8 @@ void levelOrderTraversal(BSTNode* root)
 
 void inOrderIterative(BSTNode *root) {
     // use capture_print(node->item) instead of printf
-    return;
 }
+
 
 //////////////////////////////////////////////////////////////////////////////////
 // Q3: preOrderIterative
@@ -651,4 +713,8 @@ void postOrderIterativeS1(BSTNode *root) {
 void postOrderIterativeS2(BSTNode *root) {
     // use capture_print(node->item) instead of printf
     return;
+}
+
+BSTNode* removeNodeFromTree(BSTNode *root, int value) {
+    return root;
 }

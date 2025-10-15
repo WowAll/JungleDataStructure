@@ -576,9 +576,9 @@ void test_moveMaxToFront() {
     
     // Test 4
     initList(&ll);
-    insertNode(&ll, 0, 42);
+    insertNode(&ll, 0, 18);
     moveMaxToFront(&(ll.head));
-    int expected4[] = {42};
+    int expected4[] = {18};
     TEST_ASSERT_LL_EQ(&ll, expected4, 1, "Test 4: Single element");
     removeAllItems(&ll);
 }
